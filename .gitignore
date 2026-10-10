@@ -1,0 +1,13 @@
+# .gitignore
+__pycache__/
+*.pyc
+.env
+.env.local
+*.sqlite3
+*.log
+.idea/
+.vscode/
+.DS_Store
+# Docker artifacts
+Dockerfile
+docker-compose.yml

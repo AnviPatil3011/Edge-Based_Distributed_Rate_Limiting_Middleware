@@ -1,0 +1,5 @@
+# requirements.txt
+redis>=5.0.0
+fakeredis>=2.0.0
+pytest
+Flask>=3.0.0
