@@ -107,12 +107,12 @@ local events_key = KEYS[2]
 local batches_key = KEYS[3]
 local edge_prefix = KEYS[4]
 local events_json = ARGV[1]
-local cjson = require('cjson')
 local events = cjson.decode(events_json)
 local new_events = 0
 for i, ev in ipairs(events) do
-  if redis.call('SISMEMBER', processed_set, ev.event_id) == 0 then
-    redis.call('SADD', processed_set, ev.event_id)
+  local event_id = ev.event_id or ev.request_id
+  if event_id and redis.call('SISMEMBER', processed_set, event_id) == 0 then
+    redis.call('SADD', processed_set, event_id)
     local edge_key = edge_prefix .. ':edge:' .. ev.edge_id .. ':' .. (ev.allowed and 'allowed' or 'rejected')
     redis.call('INCR', edge_key)
     new_events = new_events + 1
