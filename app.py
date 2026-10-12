@@ -2,14 +2,16 @@ import json
 import os
 import time
 import logging
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_from_directory
 from services.redis_service import RedisService
 from rate_limiter.factory import get_limiter
 from services.event_publisher import publish_event
 from config import Config
 
 app = Flask(__name__)
-
+@app.route('/dashboard', methods=['GET'])
+def dashboard():
+    return send_from_directory('static', 'dashboard.html')
 # Helper: validate config payload based on algorithm
 def _validate_config(payload):
     alg = payload.get('algorithm')

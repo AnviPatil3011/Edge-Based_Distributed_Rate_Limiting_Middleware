@@ -1,0 +1,313 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>EdgeGuard | Rate Limiting Dashboard</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: Inter, Segoe UI, Arial, sans-serif;
+      background: #0b1120;
+      color: #e5edf8;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    header {
+      padding: 22px 5%;
+      border-bottom: 1px solid #263248;
+      display: flex; justify-content: space-between;
+      align-items: center; gap: 16px; flex-wrap: wrap;
+    }
+    h1 { margin: 0; font-size: 24px; }
+    header p, .muted { color: #93a4bd; font-size: 13px; }
+    main { max-width: 1200px; margin: auto; padding: 28px 5%; }
+    .status { color: #34d399; }
+    .grid {
+      display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 16px; margin: 20px 0;
+    }
+    .panel {
+      background: #121c2e; border: 1px solid #27364e;
+      border-radius: 14px; padding: 20px; margin-bottom: 18px;
+    }
+    .metric { color: #9aacc6; font-size: 13px; }
+    .number { font-size: 32px; font-weight: 700; margin-top: 12px; }
+    .green { color: #34d399; }
+    .red { color: #fb7185; }
+    .yellow { color: #fbbf24; }
+    .columns {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 18px;
+    }
+    label { display: block; margin: 13px 0 6px; font-size: 13px; color: #b7c5d9; }
+    input, select {
+      width: 100%; padding: 11px; border-radius: 8px;
+      border: 1px solid #34445e; background: #0b1424; color: white;
+    }
+    button {
+      border: 0; background: #0891b2; color: white;
+      border-radius: 8px; padding: 11px 16px; margin-top: 15px;
+      cursor: pointer; font-weight: 600;
+    }
+    button:hover { background: #0e7490; }
+    .secondary { background: #334155; }
+    .message { margin-top: 12px; font-size: 13px; white-space: pre-wrap; }
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { padding: 12px 10px; border-bottom: 1px solid #29364a; text-align: left; }
+    th { color: #9aacc6; }
+    .pill { border-radius: 20px; padding: 5px 9px; background: #263449; }
+    @media(max-width: 760px) {
+      .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .columns { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>EdgeGuard</h1>
+    <p>Edge-Based Distributed Rate Limiting Middleware</p>
+  </div>
+  <div>API: <strong id="apiStatus" class="yellow">Checking...</strong></div>
+</header>
+
+<main>
+  <h2>System Overview</h2>
+  <p class="muted">Live data from your Flask API · Refreshes every 5 seconds</p>
+
+  <section class="grid">
+    <div class="panel"><div class="metric">Total Requests</div><div id="total" class="number">—</div></div>
+    <div class="panel"><div class="metric">Allowed</div><div id="allowed" class="number green">—</div></div>
+    <div class="panel"><div class="metric">Rejected</div><div id="rejected" class="number red">—</div></div>
+    <div class="panel"><div class="metric">Sync Worker</div><div id="worker" class="number yellow" style="font-size:21px">Checking...</div></div>
+  </section>
+
+  <section class="columns">
+    <div class="panel">
+      <h2>Configure Rate Limit</h2>
+      <form id="policyForm">
+        <label for="algorithm">Algorithm</label>
+        <select id="algorithm">
+          <option value="token_bucket">Token Bucket</option>
+          <option value="sliding_window">Sliding Window</option>
+        </select>
+        <label for="limit">Request limit</label>
+        <input id="limit" type="number" min="1" value="5" required>
+        <div id="bucketFields">
+          <label for="capacity">Bucket capacity</label>
+          <input id="capacity" type="number" min="1" value="5">
+          <label for="refill">Refill rate (tokens/second)</label>
+          <input id="refill" type="number" min="0.1" step="0.1" value="1">
+        </div>
+        <div id="windowFields" hidden>
+          <label for="window">Window duration (seconds)</label>
+          <input id="window" type="number" min="1" value="60">
+        </div>
+        <button type="submit">Save Policy</button>
+        <div id="policyMessage" class="message"></div>
+      </form>
+    </div>
+
+    <div class="panel">
+      <h2>Request Simulator</h2>
+      <form id="requestForm">
+        <label for="userId">User ID</label>
+        <input id="userId" value="demo-user" required>
+        <label for="edgeId">Edge ID</label>
+        <input id="edgeId" value="edgeA" required>
+        <label for="requestId">Request ID</label>
+        <input id="requestId" value="demo-001" required>
+        <button type="submit">Send Request</button>
+        <button type="button" class="secondary" id="simulateBtn">Run Simulation</button>
+        <div id="requestMessage" class="message"></div>
+      </form>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Infrastructure Health</h2>
+    <p>Redis: <strong id="redisStatus" class="yellow">Checking...</strong></p>
+    <p>RabbitMQ: <strong id="rabbitStatus" class="yellow">Checking...</strong></p>
+    <p>Worker: <strong id="workerStatus" class="yellow">Checking...</strong></p>
+    <button class="secondary" id="refreshBtn">Refresh Now</button>
+  </section>
+
+  <section class="panel">
+    <h2>Recent Request History</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Request ID</th><th>User</th><th>Edge</th><th>Decision</th><th>Remaining</th></tr></thead>
+        <tbody id="historyBody"><tr><td colspan="5">Loading history...</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<script>
+  const $ = id => document.getElementById(id);
+
+  async function getJSON(url, options) {
+    const response = await fetch(url, options);
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || data.message || `HTTP ${response.status}`);
+    return data;
+  }
+
+  function setStatus(id, value, good) {
+    const el = $(id);
+    el.textContent = value;
+    el.className = good ? 'green' : 'red';
+  }
+
+  async function refreshDashboard() {
+    try {
+      const data = await getJSON('/api/metrics');
+      const m = data.metrics || {};
+      $('total').textContent = m.total ?? 0;
+      $('allowed').textContent = m.allowed ?? 0;
+      $('rejected').textContent = m.rejected ?? 0;
+      setStatus('apiStatus', 'Ready', true);
+    } catch (error) {
+      setStatus('apiStatus', 'Unavailable', false);
+    }
+
+    try {
+      const data = await getJSON('/health/ready');
+      setStatus('redisStatus', data.redis ? 'Available' : 'Unavailable', !!data.redis);
+    } catch (_) {
+      setStatus('redisStatus', 'Unavailable', false);
+    }
+
+    try {
+      const data = await getJSON('/api/sync/status');
+      const sync = data.sync || data;
+      setStatus('rabbitStatus', sync.rabbitmq || 'Unknown', sync.rabbitmq === 'available');
+      const healthy = sync.worker === 'healthy';
+      setStatus('workerStatus', sync.worker || 'Unknown', healthy);
+      setStatus('worker', sync.worker || 'Unknown', healthy);
+    } catch (_) {
+      setStatus('rabbitStatus', 'Unknown', false);
+      setStatus('workerStatus', 'Unavailable', false);
+      setStatus('worker', 'Unavailable', false);
+    }
+
+    try {
+      const data = await getJSON('/api/history');
+      const rows = data.history || [];
+      $('historyBody').innerHTML = '';
+      if (!rows.length) {
+        $('historyBody').innerHTML = '<tr><td colspan="5">No requests yet.</td></tr>';
+      } else {
+        rows.slice().reverse().slice(0, 20).forEach(item => {
+          const tr = document.createElement('tr');
+          const values = [
+            item.request_id, item.user_id, item.edge_id,
+            item.allowed ? 'ALLOWED' : 'REJECTED',
+            item.remaining ?? '—'
+          ];
+          values.forEach((value, index) => {
+            const td = document.createElement('td');
+            td.textContent = value ?? '—';
+            if (index === 3) {
+              const pill = document.createElement('span');
+              pill.className = 'pill ' + (item.allowed ? 'green' : 'red');
+              pill.textContent = value;
+              td.textContent = '';
+              td.appendChild(pill);
+            }
+            tr.appendChild(td);
+          });
+          $('historyBody').appendChild(tr);
+        });
+      }
+    } catch (_) {
+      $('historyBody').innerHTML = '<tr><td colspan="5">Could not load history.</td></tr>';
+    }
+  }
+
+  $('algorithm').addEventListener('change', () => {
+    const token = $('algorithm').value === 'token_bucket';
+    $('bucketFields').hidden = !token;
+    $('windowFields').hidden = token;
+  });
+
+  $('policyForm').addEventListener('submit', async event => {
+    event.preventDefault();
+    const algorithm = $('algorithm').value;
+    const payload = {
+      algorithm,
+      limit: Number($('limit').value)
+    };
+    if (algorithm === 'token_bucket') {
+      payload.bucket_capacity = Number($('capacity').value);
+      payload.refill_rate = Number($('refill').value);
+    } else {
+      payload.window_seconds = Number($('window').value);
+    }
+
+    try {
+      const result = await getJSON('/api/config', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload)
+      });
+      $('policyMessage').textContent = 'Policy saved successfully. ID: ' + (result.policy_id || 'created');
+      await refreshDashboard();
+    } catch (error) {
+      $('policyMessage').textContent = 'Could not save policy: ' + error.message;
+    }
+  });
+
+  $('requestForm').addEventListener('submit', async event => {
+    event.preventDefault();
+    const payload = {
+      user_id: $('userId').value.trim(),
+      edge_id: $('edgeId').value.trim(),
+      request_id: $('requestId').value.trim()
+    };
+    try {
+      const response = await fetch('/api/request', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload)
+      });
+      const result = await response.json();
+      if (!response.ok && response.status !== 429) {
+        throw new Error(result.error || `HTTP ${response.status}`);
+      }
+      $('requestMessage').textContent =
+        `Decision: ${result.allowed ? 'ALLOWED' : 'REJECTED'}\n` +
+        `Remaining: ${result.remaining ?? '—'}\n` +
+        `Retry after: ${result.retry_after ?? '—'}`;
+      $('requestId').value = 'demo-' + Date.now();
+      await refreshDashboard();
+    } catch (error) {
+      $('requestMessage').textContent = 'Request failed: ' + error.message;
+    }
+  });
+
+  $('simulateBtn').addEventListener('click', async () => {
+    try {
+      const result = await getJSON('/api/simulate', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          user_id: $('userId').value.trim(),
+          edge_id: $('edgeId').value.trim()
+        })
+      });
+      $('requestMessage').textContent = JSON.stringify(result, null, 2);
+      await refreshDashboard();
+    } catch (error) {
+      $('requestMessage').textContent = 'Simulation failed: ' + error.message;
+    }
+  });
+
+  $('refreshBtn').addEventListener('click', refreshDashboard);
+  refreshDashboard();
+  setInterval(refreshDashboard, 5000);
+</script>
+</body>
+</html>

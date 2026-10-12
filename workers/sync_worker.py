@@ -151,9 +151,19 @@ class SyncWorker:
             channel = None
             _logger.info("SyncWorker started without RabbitMQ")
 
+
         try:
             while not self._stop_event.is_set():
                 now = time.time()
+
+                # Update heartbeat even when no events are available.
+                try:
+                    self.redis.client.set(
+                        "worker:heartbeat",
+                        int(now),
+                    )
+                except Exception:
+                    _logger.exception("Failed to update worker heartbeat")
 
                 if (
                     len(self.batch) >= Config.SYNC_BATCH_SIZE
